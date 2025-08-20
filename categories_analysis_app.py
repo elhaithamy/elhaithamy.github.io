@@ -5,111 +5,63 @@ st.set_page_config(page_title="Category & Item Analysis", layout="wide")
 
 st.title("📊 Category & Item Analysis Tool")
 
-# Upload Excel
-uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls"])
+# Upload file
+uploaded_file = st.file_uploader("Upload your Excel file", type=["xlsx", "xls", "csv"])
 
-if uploaded_file:
-    df = pd.read_excel(uploaded_file)
+if uploaded_file is not None:
+    # Detect file type
+    if uploaded_file.name.endswith(".csv"):
+        df = pd.read_csv(uploaded_file)
+    else:
+        df = pd.read_excel(uploaded_file, engine="openpyxl")
 
-    st.subheader("📋 Raw Data Preview")
+    st.success("✅ File uploaded successfully!")
+
+    st.write("### Preview of Data")
     st.dataframe(df.head())
 
     # Store filter
-    stores = ["All"] + sorted(df["store"].dropna().unique().tolist())
-    selected_store = st.sidebar.selectbox("Select Store", stores)
+    stores = ["All"] + df["store"].dropna().unique().tolist()
+    store_filter = st.sidebar.selectbox("Select Store", stores)
 
     # Month filter
-    months = ["All"] + sorted(df["month"].dropna().unique().tolist())
-    selected_month = st.sidebar.selectbox("Select Month", months)
+    months = ["All"] + df["month"].dropna().unique().tolist()
+    month_filter = st.sidebar.selectbox("Select Month", months)
 
-    filtered_df = df.copy()
-    if selected_store != "All":
-        filtered_df = filtered_df[filtered_df["store"] == selected_store]
-    if selected_month != "All":
-        filtered_df = filtered_df[filtered_df["month"] == selected_month]
+    # Apply filters
+    df_filtered = df.copy()
+    if store_filter != "All":
+        df_filtered = df_filtered[df_filtered["store"] == store_filter]
+    if month_filter != "All":
+        df_filtered = df_filtered[df_filtered["month"] == month_filter]
 
-    st.sidebar.subheader("Choose Analysis")
-    analysis_option = st.sidebar.radio(
-        "Select Analysis",
-        [
-            "Top-Selling Categories",
-            "Low-Performing Categories",
-            "Declining Sub-Categories",
-            "Top-Selling Items",
-            "Low-Performing Items",
-            "ABC Classification",
-        ],
-    )
+    # Analysis buttons
+    st.write("### Select Analysis")
+    analysis_type = st.radio("Choose an analysis:", [
+        "Top-Selling Categories",
+        "Low-Performing Categories",
+        "Declining Sub-Categories",
+        "Item-Level Performance"
+    ])
 
-    if analysis_option == "Top-Selling Categories":
-        top = (
-            filtered_df.groupby("Category")["total_amount"]
-            .sum()
-            .sort_values(ascending=False)
-            .reset_index()
-        )
-        st.subheader("🔥 Top-Selling Categories")
-        st.dataframe(top)
+    if analysis_type == "Top-Selling Categories":
+        result = df_filtered.groupby("Category")["total_amount"].sum().sort_values(ascending=False).head(10)
+        st.write("#### 🔝 Top-Selling Categories")
+        st.bar_chart(result)
 
-    elif analysis_option == "Low-Performing Categories":
-        low = (
-            filtered_df.groupby("Category")["total_amount"]
-            .sum()
-            .sort_values(ascending=True)
-            .reset_index()
-        )
-        st.subheader("🐌 Low-Performing Categories")
-        st.dataframe(low)
+    elif analysis_type == "Low-Performing Categories":
+        result = df_filtered.groupby("Category")["total_amount"].sum().sort_values().head(10)
+        st.write("#### 📉 Low-Performing Categories")
+        st.bar_chart(result)
 
-    elif analysis_option == "Declining Sub-Categories":
-        trend = (
-            filtered_df.groupby(["month", "SubCategroy"])["total_amount"]
-            .sum()
-            .reset_index()
-        )
-        trend["pct_change"] = trend.groupby("SubCategroy")["total_amount"].pct_change()
-        declining = trend[trend["pct_change"] < 0]
-        st.subheader("📉 Declining Sub-Categories")
-        st.dataframe(declining)
+    elif analysis_type == "Declining Sub-Categories":
+        trend = df_filtered.groupby(["month", "SubCategroy"])["total_amount"].sum().reset_index()
+        st.line_chart(trend, x="month", y="total_amount", color="SubCategroy")
 
-    elif analysis_option == "Top-Selling Items":
-        top_items = (
-            filtered_df.groupby(["Description"])["total_amount"]
-            .sum()
-            .sort_values(ascending=False)
-            .reset_index()
-        )
-        st.subheader("⭐ Top-Selling Items")
-        st.dataframe(top_items)
-
-    elif analysis_option == "Low-Performing Items":
-        low_items = (
-            filtered_df.groupby(["Description"])["total_amount"]
-            .sum()
-            .sort_values(ascending=True)
-            .reset_index()
-        )
-        st.subheader("⚠️ Low-Performing Items")
-        st.dataframe(low_items)
-
-    elif analysis_option == "ABC Classification":
-        abc = (
-            filtered_df.groupby("ItemLookupCode")["total_amount"]
-            .sum()
-            .reset_index()
-            .sort_values("total_amount", ascending=False)
-        )
-        abc["cumulative_share"] = (
-            abc["total_amount"].cumsum() / abc["total_amount"].sum()
-        )
-        abc["class"] = pd.cut(
-            abc["cumulative_share"],
-            bins=[0, 0.8, 0.95, 1.0],
-            labels=["A", "B", "C"],
-            include_lowest=True,
-        )
-        st.subheader("🔤 ABC Classification")
-        st.dataframe(abc)
+    elif analysis_type == "Item-Level Performance":
+        result = df_filtered.groupby("Description")[["n_order", "total_amount"]].sum().sort_values("total_amount", ascending=False).head(20)
+        st.write("#### 🛒 Item-Level Performance")
+        st.dataframe(result)
 
 else:
-    st.info("👆 Please upload an Excel file with the expected headers to start.")
+    st.info("👆 Please upload a file to get started.")
